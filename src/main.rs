@@ -82,7 +82,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             }
                         }
+                    },
+                    {
+                    "type": "function",
+                    "function": {
+                        "name": "Bash",
+                        "description": "Execute a shell command",
+                        "parameters": {
+                        "type": "object",
+                        "required": ["command"],
+                        "properties": {
+                            "command": {
+                            "type": "string",
+                            "description": "The command to execute"
+                            }
+                        }
+                        }
                     }
+                }
                 ]
             }))
             .await?;
@@ -117,8 +134,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .as_str()
                         .unwrap();
                     let args_val: serde_json::Value = serde_json::from_str(arguments).unwrap();
-                    let f_path = args_val["file_path"].as_str().unwrap();
                     if name == String::from("Read") {
+                        let f_path = args_val["file_path"].as_str().unwrap();
                         let f_content = std::fs::read_to_string(f_path).unwrap();
                         messages.push(json!( {
                             "role": String::from("tool"),
@@ -126,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "tool_call_id": tool_call_id
                         }));
                     } else if name == String::from("Write") {
+                        let f_path = args_val["file_path"].as_str().unwrap();
                         let f_write = args_val["content"].as_str().unwrap();
 
                         if let Some(parent) = std::path::Path::new(f_path).parent() {
@@ -138,6 +156,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         messages.push(json!( {
                             "role": String::from("tool"),
                             "content": f_write,
+                            "tool_call_id": tool_call_id
+                        }));
+                    } else if name == String::from("Bash") {
+                        let comm_to_exe = args_val["command"].as_str().unwrap();
+                        let output = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(comm_to_exe)
+                            .output()
+                            .expect("Failed to execute shell command");
+                        let msg: String;
+                        if output.status.success() {
+                            msg = String::from_utf8_lossy(&output.stdout).to_string();
+                        } else {
+                            msg = String::from_utf8_lossy(&output.stderr).to_string();
+                        }
+                        messages.push(json!( {
+                            "role": String::from("tool"),
+                            "content": msg,
                             "tool_call_id": tool_call_id
                         }));
                     }

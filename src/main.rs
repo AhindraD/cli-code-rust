@@ -61,6 +61,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 "required": ["file_path"]
                             }
                         }
+                    },
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Write",
+                            "description": "Write content to a file",
+                            "parameters": {
+                            "type": "object",
+                            "required": ["file_path", "content"],
+                            "properties": {
+                                "file_path": {
+                                "type": "string",
+                                "description": "The path of the file to write to"
+                                },
+                                "content": {
+                                "type": "string",
+                                "description": "The content to write to the file"
+                                }
+                            }
+                            }
+                        }
                     }
                 ]
             }))
@@ -76,8 +97,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "content":content,
             "tool_calls": assistent_msg["tool_calls"]
         }));
-        // TODO: Uncomment the lines below to pass the first stage
-        // if !assistent_msg["tool_calls"].is_null()
         if assistent_msg["tool_calls"].is_null()
             || assistent_msg["tool_calls"]
                 .as_array()
@@ -99,11 +118,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap();
                     let args_val: serde_json::Value = serde_json::from_str(arguments).unwrap();
                     let f_path = args_val["file_path"].as_str().unwrap();
-                    let f_content = std::fs::read_to_string(f_path).unwrap();
                     if name == String::from("Read") {
+                        let f_content = std::fs::read_to_string(f_path).unwrap();
                         messages.push(json!( {
                             "role": String::from("tool"),
                             "content": f_content,
+                            "tool_call_id": tool_call_id
+                        }));
+                    } else if name == String::from("Write") {
+                        let f_write = args_val["content"].as_str().unwrap();
+                        let file_exists = std::fs::exists(f_path)?;
+                        if !file_exists {
+                            std::fs::create_dir(f_path)?;
+                        }
+                        std::fs::write(f_path, f_write)?;
+                        messages.push(json!( {
+                            "role": String::from("tool"),
+                            "content": f_write,
                             "tool_call_id": tool_call_id
                         }));
                     }

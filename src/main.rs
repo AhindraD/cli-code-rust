@@ -65,8 +65,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Logs from your program will appear here!");
 
     // TODO: Uncomment the lines below to pass the first stage
-    if let Some(content) = response["choices"][0]["message"]["content"].as_str() {
-        println!("{}", content);
+    if !response["choices"][0]["message"]["tool_calls"].is_null() {
+        let name = response["choices"][0]["message"]["tool_calls"][0]["function"]["name"];
+        let arguments = response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"];
+        eprintln!("{} {}", name, arguments);
+        let f_path = serde_json::from_str(stringify!(arguments));
+        let f_content = std::fs::read_to_string(f_path);
+        println!({}, f_content)
     }
 
     Ok(())

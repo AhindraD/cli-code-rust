@@ -127,10 +127,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }));
                     } else if name == String::from("Write") {
                         let f_write = args_val["content"].as_str().unwrap();
-                        let file_exists = std::fs::exists(f_path)?;
-                        if !file_exists {
-                            std::fs::create_dir(f_path)?;
+
+                        if let Some(parent) = std::path::Path::new(f_path).parent() {
+                            if !parent.as_os_str().is_empty() {
+                                std::fs::create_dir_all(parent)?;
+                            }
                         }
+
                         std::fs::write(f_path, f_write)?;
                         messages.push(json!( {
                             "role": String::from("tool"),

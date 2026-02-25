@@ -12,8 +12,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
     let base_url = env::var("OPENROUTER_BASE_URL")
         .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
 
@@ -28,63 +26,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
-    #[allow(unused_variables)]
-    let response: Value = client
-        .chat()
-        .create_byot(json!({
-            "messages": [
-                {
-                    "role": "user",
-                    "content": args.prompt
-                }
-            ],
-            "model": "anthropic/claude-haiku-4.5",
-            "tools":[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "Read",
-                        "description": "Read and return the contents of a file",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "The path to the file to read"
-                                }
-                            },
-                            "required": ["file_path"]
+    // struct Message {
+    //     role: String,
+    //     content: String,
+    //     tool_call_id: String,
+    // }
+    let mut messages = Vec::new();
+    let args = Args::parse();
+    messages.push(json!( {
+        "role": String::from("user"),
+        "content": args.prompt.clone(),
+    }));
+    loop {
+        #[allow(unused_variables)]
+        let response: Value = client
+            .chat()
+            .create_byot(json!({
+                "messages":messages,
+                "model": "anthropic/claude-haiku-4.5",
+                "tools":[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "Read",
+                            "description": "Read and return the contents of a file",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "The path to the file to read"
+                                    }
+                                },
+                                "required": ["file_path"]
+                            }
                         }
                     }
+                ]
+            }))
+            .await?;
+
+        // You can use print statements as follows for debugging, they'll be visible when running tests.
+        eprintln!("Logs from your program will appear here!");
+
+        let assistent_msg = response["choices"][0]["message"].clone();
+        let content = assistent_msg["content"].as_str();
+        messages.push(json!( {
+            "role": String::from(assistent_msg["role"].as_str().unwrap()),
+            "content":content,
+            "tool_calls": assistent_msg["tool_calls"]
+        }));
+        // TODO: Uncomment the lines below to pass the first stage
+        // if !assistent_msg["tool_calls"].is_null()
+        if assistent_msg["tool_calls"].is_null()
+            || assistent_msg["tool_calls"]
+                .as_array()
+                .map(|a| a.is_empty())
+                .unwrap_or(true)
+        {
+            println!("{}", assistent_msg["content"].as_str().unwrap());
+            break;
+        } else {
+            {
+                for tool_call in assistent_msg["tool_calls"].as_array().unwrap() {
+                    let tool_call_id = tool_call["id"].as_str().unwrap();
+
+                    let name = assistent_msg["tool_calls"][0]["function"]["name"]
+                        .as_str()
+                        .unwrap();
+                    let arguments = assistent_msg["tool_calls"][0]["function"]["arguments"]
+                        .as_str()
+                        .unwrap();
+                    let args_val: serde_json::Value = serde_json::from_str(arguments).unwrap();
+                    let f_path = args_val["file_path"].as_str().unwrap();
+                    let f_content = std::fs::read_to_string(f_path).unwrap();
+                    if name == String::from("Read") {
+                        messages.push(json!( {
+                            "role": String::from("tool"),
+                            "content": f_content,
+                            "tool_call_id": tool_call_id
+                        }));
+                    }
                 }
-            ]
-        }))
-        .await?;
-
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    eprintln!("Logs from your program will appear here!");
-
-    // TODO: Uncomment the lines below to pass the first stage
-    if !response["choices"][0]["message"]["tool_calls"].is_null() {
-        let name = response["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
-            .as_str()
-            .unwrap();
-        let arguments = response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
-            .as_str()
-            .unwrap();
-        eprintln!("{} {}", name, arguments);
-        let args_val: serde_json::Value = serde_json::from_str(arguments).unwrap();
-        let f_path = args_val["file_path"].as_str().unwrap();
-        let f_content = std::fs::read_to_string(f_path).unwrap();
-        if name == String::from("Read") {
-            println!("{}", f_content)
+            }
         }
-    } else {
-        let content = response["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap();
-        println!("{}", content);
     }
-
     Ok(())
 }
